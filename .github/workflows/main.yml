@@ -1,0 +1,114 @@
+name: Build llama-cpp-python (Alpine 3.23 ARM64)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-alpine-musl:
+    name: Compile for Alpine 3.23 (musl) aarch64
+    # CRITICAL: Use native ARM64 runner to avoid QEMU emulation slowness
+    runs-on: ubuntu-24.04-arm
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create Dockerfile
+        # We generate the Dockerfile inline to keep this a single-file solution
+        run: |
+          cat << 'EOF' > Dockerfile.alpine
+          # ------------------------------------------------------------------
+          # TARGET: Alpine 3.23 (musl) | ARCH: aarch64 | PYTHON: 3.12
+          # ------------------------------------------------------------------
+          FROM alpine:3.23 AS builder
+
+          # Install build dependencies required for llama.cpp + musl compatibility
+          # linux-headers is critical for musl memory mapping
+          # openblas-dev is critical for ARM performance acceleration
+          RUN apk add --no-cache \
+              gcc \
+              g++ \
+              make \
+              cmake \
+              openblas-dev \
+              linux-headers \
+              python3 \
+              py3-pip \
+              py3-wheel \
+              git \
+              musl-dev \
+              libstdc++
+
+          # Set Python 3 as default if needed (Alpine usually links python3 to python)
+          RUN ln -sf python3 /usr/bin/python
+
+          # Environment variables for llama-cpp-python compilation          # LLAMA_BLAS=ON enables OpenBLAS acceleration (Required for decent speed on ARM)
+          # CMAKE_ARGS passes flags directly to the underlying llama.cpp build
+          ENV CMAKE_ARGS="-DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS -DLLAMA_NATIVE=ON"
+          ENV PIP_NO_BINARY="llama-cpp-python"
+          ENV PIP_WHEEL_DIR="/wheels"
+
+          # Create wheel directory
+          RUN mkdir -p /wheels
+
+          # Install llama-cpp-python from PyPI (Source Build)
+          # This compiles the C++ code inside the container
+          RUN pip3 install --no-cache-dir --upgrade pip && \
+              pip3 wheel --no-deps --wheel-dir=/wheels llama-cpp-python
+
+          # Runtime stage (cleaner, though we mostly care about the wheel artifact)
+          FROM alpine:3.23 AS runtime
+          RUN apk add --no-cache python3 openblas libstdc++
+          COPY --from=builder /wheels /wheels
+          COPY --from=builder /usr/lib/python3.12/site-packages /usr/lib/python3.12/site-packages
+          
+          # Verify Build
+          RUN python3 -c "import llama_cpp; print('Build Successful')"
+          EOF
+
+      - name: Build Docker Image
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            --target builder \
+            --output type=docker \
+            --tag llama-build-env:latest \
+            -f Dockerfile.alpine .
+
+      - name: Extract Compiled Wheel
+        run: |
+          # Create a container from the image to extract the file
+          CONTAINER_ID=$(docker create llama-build-env:latest)
+          
+          # Create output directory
+          mkdir -p ./dist
+          
+          # Copy the wheel file from the container to the host runner
+          # We use docker cp to grab the .whl file generated in /wheels
+          docker cp ${CONTAINER_ID}:/wheels/. ./dist/
+          
+          # Cleanup container
+          docker rm ${CONTAINER_ID}
+          
+          # Verify file exists
+          ls -lh ./dist/
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-cpp-python-alpine-3.23-arm64
+          path: ./dist/*.whl
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Build Final Runtime Image (Optional)
+        # If you also want to push a ready-to-run Docker image
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            --target runtime \
+            --tag my-llama-alpine-arm:latest \
+            -f Dockerfile.alpine .
+            # Add --push and registry login here if you want to publish the image
