@@ -56,7 +56,7 @@ jobs:
 
           # Install llama-cpp-python from PyPI (Source Build)
           # This compiles the C++ code inside the container
-          RUN pip3 wheel --no-deps --wheel-dir=/wheels llama-cpp-python
+          RUN CMAKE_ARGS="-DLLAMA_NATIVE=OFF -DGGML_NATIVE=OFF -DLLAMA_NEON=ON -DGGML_ARM_DOTPROD=OFF -DGGML_ARM_FMA=OFF" FORCE_CMAKE=1 pip3 wheel --no-deps --wheel-dir=/wheels llama-cpp-python
 
           # Runtime stage (cleaner, though we mostly care about the wheel artifact)
           FROM alpine:3.23 AS runtime
