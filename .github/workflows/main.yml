@@ -101,13 +101,3 @@ jobs:
           path: ./dist/*.whl
           retention-days: 30
           if-no-files-found: error
-
-      - name: Build Final Runtime Image (Optional)
-        # If you also want to push a ready-to-run Docker image
-        run: |
-          docker buildx build \
-            --platform linux/arm64 \
-            --target runtime \
-            --tag my-llama-alpine-arm:latest \
-            -f Dockerfile.alpine .
-            # Add --push and registry login here if you want to publish the image
