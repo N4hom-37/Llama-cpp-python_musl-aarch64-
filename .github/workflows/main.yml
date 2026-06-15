@@ -1,11 +1,11 @@
-name: Build llama-cpp-python (Alpine 3.24.1 ARM64)
+name: Build llama-cpp-python (Alpine 3.24 ARM64)
 
 on:
   workflow_dispatch:
 
 jobs:
   build-alpine-musl:
-    name: Compile for Alpine 3.24.1 (musl) aarch64
+    name: Compile for Alpine 3.24 (musl) aarch64
     # CRITICAL: Use native ARM64 runner to avoid QEMU emulation slowness
     runs-on: ubuntu-24.04-arm
     
@@ -21,9 +21,9 @@ jobs:
         run: |
           cat << 'EOF' > Dockerfile.alpine
           # ------------------------------------------------------------------
-          # TARGET: Alpine 3.24.1 (musl) | ARCH: aarch64 | PYTHON: 3.14
+          # TARGET: Alpine 3.24 (musl) | ARCH: aarch64 | PYTHON: 3.14
           # ------------------------------------------------------------------
-          FROM alpine:3.24.1 AS builder
+          FROM alpine:3.24 AS builder
 
           # Install build dependencies required for llama.cpp + musl compatibility
           # linux-headers is critical for musl memory mapping
@@ -59,7 +59,7 @@ jobs:
           RUN CMAKE_ARGS="-DLLAMA_NATIVE=OFF -DGGML_NATIVE=OFF -DLLAMA_NEON=ON -DGGML_ARM_DOTPROD=OFF -DGGML_ARM_FMA=OFF" FORCE_CMAKE=1 pip3 wheel --no-deps --wheel-dir=/wheels llama-cpp-python
 
           # Runtime stage (cleaner, though we mostly care about the wheel artifact)
-          FROM alpine:3.24.1 AS runtime
+          FROM alpine:3.24 AS runtime
           RUN apk add --no-cache python3 openblas libstdc++
           COPY --from=builder /wheels /wheels
           COPY --from=builder /usr/lib/python3.14/site-packages /usr/lib/python3.14/site-packages
@@ -97,7 +97,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: llama-cpp-python-alpine-3.24.1-arm64
+          name: llama-cpp-python-alpine-3.24-arm64
           path: ./dist/*.whl
           retention-days: 30
           if-no-files-found: error
